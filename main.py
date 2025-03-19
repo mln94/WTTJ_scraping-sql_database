@@ -5,6 +5,7 @@ import time
 import openai
 from dotenv import load_dotenv
 import tiktoken
+import os
 
 load_dotenv()
 request_number = 0
@@ -12,6 +13,35 @@ client = openai.OpenAI()
 model = "gpt-4o-mini"
 output_token_number = 0
 input_token_number = 0
+
+def add_to_json_file(json_object, file_path="data.json"):
+    # Initialize existing_data
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        with open(file_path, 'r') as file:
+            try:
+                existing_data = json.load(file)
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+    
+    # If existing_data is a list, append the new object
+    if isinstance(existing_data, list):
+        existing_data.append(json_object)
+    # If existing_data is a dictionary, you could update it or merge it
+    elif isinstance(existing_data, dict):
+        # Option 1: Store multiple entries with unique keys
+        # For example, using a timestamp or an ID
+        import time
+        entry_id = str(int(time.time()))  # Use timestamp as ID
+        existing_data[entry_id] = json_object
+        
+        # Option 2: Or simply merge dictionaries (will overwrite duplicate keys)
+        # existing_data.update(json_object)
+    
+    # Write the updated data back to the file
+    with open(file_path, 'w') as file:
+        json.dump(existing_data, file, indent=4, ensure_ascii=False)
 
 def send_to_openai(job_data):
     global request_number
@@ -26,46 +56,45 @@ def send_to_openai(job_data):
         time.sleep(120)
 
     prompt = f"""
-You are a data extraction assistant. Given this job description:
+    You are a data extraction assistant. Given this job description:
 
-{job_data["content_section"]}
+    {job_data["content_section"]}
 
-Analyze the description and extract all the skills required for the position.
+    Analyze the description and extract all the skills required for the position in the language used in {job_data}.
 
-### **Output Format:**  
-Return a **JSON object** with the following structure:
+    ### **Output Format:**  
+    Return a **JSON object** with the following structure:
 
-{{
-    "company_name": "{job_data['company_name']}",
-    "job_title": "{job_data['job_name']}",
-    "required_skills": {{
-        "soft_skills": ["List of soft skills"],
-        "hard_skills": {{
-            "technical_skills": ["List of technical skills"],
-            "tools": ["List of specific tools, software, frameworks, or technologies required"]
+    {{
+        "company_name": "{job_data['company_name']}",
+        "job_title": "{job_data['job_name']}",
+        "required_skills": {{
+            "soft_skills": ["List of soft skills"],
+            "hard_skills": {{
+                "technical_skills": ["List of technical skills"],
+                "tools": ["List of specific tools, software, frameworks, or technologies required"]
+            }}
         }}
     }}
-}}
 
-### **Extraction Guidelines:**
-1. **Soft Skills:**  
-   - Extract all **behavioral, interpersonal, and problem-solving** skills.
-   - Examples: communication, leadership, adaptability, time management.
+    ### **Extraction Guidelines:**
+    1. **Soft Skills:**  
+    - Extract all **behavioral, interpersonal, and problem-solving** skills.
+    - Examples: communication, leadership, adaptability, time management.
 
-2. **Hard Skills:**  
-   - **Technical Skills:** Extract all domain-specific **expertise and competencies**.  
-     - Examples: programming languages, engineering principles, financial analysis, etc.
-   - **Tools:** Extract a list of all **software, platforms, frameworks, or technologies** mentioned.  
-     - Examples: Python, Excel, Salesforce, Kubernetes, AWS.
+    2. **Hard Skills:**  
+    - **Technical Skills:** Extract all domain-specific **expertise and competencies**.  
+        - Examples: programming languages, engineering principles, financial analysis, etc.
+    - **Tools:** Extract a list of all **software, platforms, frameworks, or technologies** mentioned.  
+        - Examples: Python, Excel, Salesforce, Kubernetes, AWS.
 
-### **Important Notes:**
-- Ensure the extraction is **as exhaustive as possible**.
-- Only include **relevant** skills that are explicitly or implicitly required.
-- Preserve **specific terminology** used in the job description.
+    ### **Important Notes:**
+    - Ensure the extraction is **as exhaustive as possible**.
+    - Only include **relevant** skills that are explicitly or implicitly required.
+    - Preserve **specific terminology** used in the job description.
 
-Now, extract and return the JSON object.
-"""
-
+    Now, extract and return the JSON object.
+    """
     completion = client.chat.completions.create(
         model=model,
         messages = [
@@ -77,7 +106,19 @@ Now, extract and return the JSON object.
     )
     input_token_number += completion.usage.completion_tokens
     print(input_token_number)
-    print(completion.choices[0].message.content)
+    result = completion.choices[0].message.content
+
+    # with open("data.json", "w") as file:
+    #     json.dump(json.loads(completion.choices[0].message["content"]), file, indent=4)
+    json_string = result.replace("```json\n", "", 1).replace("\n```", "", 1)
+    json_object = json.loads(json_string)
+    add_to_json_file(json_object)
+
+# # Check the type
+#     print(type(results))  # Output: <class 'dict'>
+    # with open("data.json", "w") as file:
+    #     json.dump(result, file, indent=4)  # indent=4 makes it more readable
+    
 
 def check_input_token_number(job_data):
     global output_token_number
@@ -86,7 +127,6 @@ def check_input_token_number(job_data):
     output_token_number += token_number
     print(output_token_number)
     send_to_openai(job_data)
-
 
 def get_job_datas(url):
     global output_token_number
@@ -105,13 +145,14 @@ def get_job_datas(url):
     check_input_token_number(job_data)
     # send_to_openai(job_data)
 
-
 def get_job_url(response):
     jobs_offer = response.json()["results"][0]["hits"]
+    # for i, job in enumerate(jobs_offer):
+    #     if i == 3:
+    #         break
     for job in jobs_offer:
         url = f"https://www.welcometothejungle.com/fr/companies/{job['organization']['slug']}/jobs/{job['slug']}"
         get_job_datas(url)
-        break
 
 def request_data():
     with open("payload.json", "r") as file:
