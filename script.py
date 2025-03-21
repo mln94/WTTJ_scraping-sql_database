@@ -78,7 +78,6 @@ def get_job_data(url):
         "company_url": company_url,
         "creation": creation,
     })
-    # print(objData)
 
 # ajouter jobtitle ligne par ligne sur un fichier text et rajouter le fichier text dans la bdd
 def get_job_links(response):
